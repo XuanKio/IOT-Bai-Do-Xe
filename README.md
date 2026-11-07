@@ -1,8 +1,8 @@
-# Bãi đỗ xe IoT — bản 1: base / người 1
+# Bãi đỗ xe IoT — nền tảng ESP32 và MQTT
 
 Đây là mốc nền được tách từ bài hoàn thiện có sẵn của nhóm, không phải lịch sử phát triển gốc.
 Phần bàn giao: firmware ESP32, cảm biến P1/P2 và cổng vào/ra, servo tự động/thủ công,
-giao thức telemetry/ACK, parser MQTT và kiểm thử logic. Backend quản lý và giao diện sẽ đến ở bản 2/3.
+giao thức telemetry/ACK, parser MQTT và kiểm thử logic. Backend quản lý và giao diện được bổ sung ở các mốc tiếp theo.
 
 ## Kiểm tra base (từ thư mục gốc repo)
 
@@ -21,11 +21,11 @@ Các bài C++ kiểm tra logic trên máy tính, chưa thay cho việc nạp ESP
 ## Ranh giới bản này
 
 Chưa có FastAPI, database hoặc dashboard. `mqtt/monitor.py` là công cụ subscribe dùng lại sau
-khi bản 2 tạo broker/cấu hình local; không tự tạo tài khoản hoặc ACK thay backend.
-Firmware hiện tại cần backend ở bản 2 để xử lý ACK và lệnh từ xa khi chạy tích hợp.
+khi mốc backend tạo broker/cấu hình local; không tự tạo tài khoản hoặc ACK thay backend.
+Firmware hiện tại cần backend để xử lý ACK và lệnh từ xa khi chạy tích hợp.
 Đọc `hardware/README.md` để đấu nối. Không dùng `config.example.h` làm mật khẩu chạy thật.
 
 ## Bước tiếp theo
 
-Người 1 review và tự commit base. Sau đó người 2 áp dụng bản `02-nguoi-2-backend` theo
-`BAN-GIAO-IOT/HUONG-DAN.md` ở thư mục bên ngoài repo.
+Bổ sung FastAPI và SQLite để lưu telemetry, cung cấp API quản lý thiết bị,
+đăng nhập và phân quyền. Sau đó tích hợp dashboard để theo dõi ô đỗ và điều khiển cổng.
