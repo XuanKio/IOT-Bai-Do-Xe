@@ -86,10 +86,13 @@ GET `/devices/{id}/configuration` cho biết chu kỳ đã ghi nhận và yêu c
 
 ## Cảnh báo và lịch sử
 
-- GET/PUT `/devices/{id}/rules`: bật/tắt cảnh báo bãi đầy, ngưỡng dữ liệu 5–120 giây. `offline_enabled` luôn trả về false; không tạo cảnh báo mất kết nối hoặc lệnh timeout.
+- GET/PUT `/devices/{id}/rules`: bật/tắt cảnh báo bãi đầy (`full_enabled`) và cảnh báo mất kết nối (`offline_enabled`), ngưỡng dữ liệu `offline_timeout_s` 5–120 giây. Admin hoặc operator có quyền cấu hình thiết bị được PUT; giá trị sai trả 422. Mặc định `offline_enabled=true`.
 - Ngưỡng thực tế lấy max(ngưỡng cấu hình, ba chu kỳ gửi) để tránh báo mất kết nối sai khi tăng chu kỳ.
 - Một cảnh báo đang diễn ra không bị tạo lại mỗi giây. Hết điều kiện thì ghi resolved_at.
-- Cảnh báo bãi đầy tự kết thúc khi điều kiện không còn (`resolved_at`). Danh sách `/alerts` chỉ trả cảnh báo bãi đầy, kể cả lịch sử, kèm `acknowledged`, `acknowledged_by` (ID người dùng) và `acknowledged_at`.
+- Cảnh báo `device_offline` được tạo khi thiết bị `active`, đã từng gửi dữ liệu (`last_seen`), bật `offline_enabled` và im lặng quá ngưỡng thực tế hoặc gửi trạng thái `offline` (LWT). Không tạo cảnh báo khi: thiết bị chưa từng gửi dữ liệu, trạng thái `registered/provisioned/maintenance/revoked/decommissioned`, MQTT receiver chưa sẵn sàng, hoặc chưa đủ một ngưỡng kể từ khi receiver sẵn sàng lại (tránh báo hàng loạt khi backend vừa khởi động). Trong các khoảng này cảnh báo đang mở được giữ nguyên (không resolve, không tạo trùng).
+- `device_offline` tự resolved (`resolved_at`) khi có dữ liệu hợp lệ trở lại, khi thiết bị chuyển khỏi `active`, hoặc khi tắt `offline_enabled`. Mỗi sự cố là một cảnh báo riêng; sự cố sau tạo bản ghi mới và giữ lịch sử cũ. Dữ liệu cũ: các thiết bị tạo trước phiên bản này có `device_details.offline_alert = 0`; bật bằng `PUT /devices/{id}/rules` hoặc `UPDATE device_details SET offline_alert = 1`.
+- Cảnh báo bãi đầy tự kết thúc khi điều kiện không còn (`resolved_at`). Danh sách `/alerts` trả cảnh báo `parking_full` và `device_offline`, kể cả lịch sử, kèm `kind`, `device_id`, `active`, `resolved_at`, `acknowledged`, `acknowledged_by` (ID người dùng) và `acknowledged_at`. Danh sách theo phạm vi thiết bị được cấp quyền.
+- Thử nghiệm: thiết bị thật — ngắt nguồn/Wi-Fi ESP32, sau tối thiểu ngưỡng (mặc định 10 giây, ít nhất 3 chu kỳ gửi) `/alerts` có `device_offline`; cắm lại thì cảnh báo resolved. Thiết bị `simulator` không sinh cảnh báo offline.
 - POST `/alerts/{alert_id}/acknowledge`: ghi nhận người đã xem/xử lý cảnh báo. Xác nhận **không** kết thúc cảnh báo; `active` và `resolved_at` vẫn do cơ chế tự động quyết định.
   - Admin xác nhận mọi cảnh báo; operator chỉ xác nhận cảnh báo của thiết bị được cấp quyền; viewer nhận 403; chưa đăng nhập bị từ chối.
   - Cảnh báo không tồn tại hoặc ngoài phạm vi thiết bị đều trả 404 giống nhau.

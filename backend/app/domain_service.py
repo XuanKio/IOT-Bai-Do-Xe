@@ -10,10 +10,30 @@ from app.domain import (AlertDetails, DeviceBoot, DeviceCommand, DeviceDetails, 
 
 log = logging.getLogger(__name__)
 TERMINAL = {"acknowledged", "failed", "timed_out", "cancelled"}
+ALERT_KINDS = ("parking_full", "device_offline")
+# (receiver object, time it was first seen ready); lets a restarted backend wait for devices to report.
+_receiver_ready = [None, None]
 
 
 def utc(value):
     return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
+
+
+def offline_condition(device, info, state, at):
+    """Decide the device_offline alert: True raise/keep, False resolve, None leave unchanged.
+
+    Only a device that was seen before, should be active and then went silent can alert.
+    Never-seen and maintenance/revoked/decommissioned devices never do. While the MQTT
+    receiver is down or still inside its restart grace period silence proves nothing, so
+    existing alerts are held (not resolved, not duplicated) and new ones are not raised.
+    """
+    if not info or not info.offline_alert or device.status != "active" or not info.last_seen or state != "offline":
+        return False
+    receiver = getattr(M.app.state, "mqtt_receiver", None)
+    if not receiver_ready() or _receiver_ready[0] is not receiver or _receiver_ready[1] is None:
+        return None
+    timeout = max(info.offline_timeout_s, info.report_interval_ms * 3 / 1000)
+    return True if (at - _receiver_ready[1]).total_seconds() >= timeout else None
 
 
 def details(db, device):
@@ -256,10 +276,15 @@ def receive_status(item, received_at):
 @serialized
 def runtime_tick():
     to_publish = []
+    receiver = getattr(M.app.state, "mqtt_receiver", None)
+    if not receiver_ready():
+        _receiver_ready[0], _receiver_ready[1] = None, None
+    elif _receiver_ready[0] is not receiver or _receiver_ready[1] is None:
+        _receiver_ready[0], _receiver_ready[1] = receiver, M.now()
     with M.Sessions() as db:
-        # Retire alerts from the previous policy without deleting their history.
+        # Retire alerts from unsupported kinds without deleting their history.
         for alert in db.scalars(select(AlertDetails).where(
-                AlertDetails.kind != "parking_full", AlertDetails.active_key.is_not(None))):
+                AlertDetails.kind.not_in(ALERT_KINDS), AlertDetails.active_key.is_not(None))):
             alert.active_key, alert.resolved_at = None, M.now()
         for device in db.scalars(select(M.Device)):
             info = details(db, device)
@@ -277,6 +302,9 @@ def runtime_tick():
             full = bool(device_slots) and all(slot["occupied"] is True for slot in device_slots)
             set_alert(db, device, "parking_full", full and info.full_alert,
                       f"Khu vuc cua {device.code} da het cho do")
+            offline = offline_condition(device, info, state, M.now())
+            if offline is not None:
+                set_alert(db, device, "device_offline", offline, f"Thiet bi {device.code} mat ket noi")
         for command in db.scalars(select(DeviceCommand).where(DeviceCommand.status.in_(["queued", "sent"]))):
             device = db.get(M.Device, command.device_id)
             gate_cancelled = False

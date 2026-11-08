@@ -15,7 +15,7 @@ from app import main as M
 from app.broker_admin import BrokerUnavailable
 from app.domain import LiveTelemetry, LiveGateControl, LiveGateSensors, GateCommandCounter, AlertDetails, DeviceCommand, DeviceDetails, DeviceGrant, DeviceSlot, ParkingEvent, HourlyOccupancy
 from app.coordination import serialized
-from app.domain_service import authorize, connectivity, details, receiver_ready, utc, visible_codes
+from app.domain_service import ALERT_KINDS, authorize, connectivity, details, receiver_ready, utc, visible_codes
 
 router = APIRouter(dependencies=[Depends(M.roles("admin", "operator"))])
 
@@ -62,7 +62,7 @@ class AssignSlotBody(StrictBody):
 
 
 class RuleBody(StrictBody):
-    offline_enabled: bool = False
+    offline_enabled: bool = True
     full_enabled: bool = True
     offline_timeout_s: int = Field(default=10, ge=5, le=120)
 
@@ -198,7 +198,7 @@ def assign_slot(device_id: int, body: AssignSlotBody, user=Depends(M.roles("admi
 def get_rules(device_id: int, user=Depends(M.current_user), db=Depends(M.session)):
     device = authorize(db, user, device_id=device_id)
     info = details(db, device)
-    return {"offline_enabled": False, "full_enabled": info.full_alert,
+    return {"offline_enabled": info.offline_alert, "full_enabled": info.full_alert,
             "offline_timeout_s": info.offline_timeout_s,
             "effective_offline_timeout_s": max(info.offline_timeout_s, info.report_interval_ms * 3 / 1000)}
 
@@ -207,7 +207,7 @@ def get_rules(device_id: int, user=Depends(M.current_user), db=Depends(M.session
 def update_rules(device_id: int, body: RuleBody, user=Depends(M.current_user), db=Depends(M.session)):
     device = authorize(db, user, device_id=device_id, permission="configure")
     info = details(db, device)
-    info.offline_alert, info.full_alert, info.offline_timeout_s = False, body.full_enabled, body.offline_timeout_s
+    info.offline_alert, info.full_alert, info.offline_timeout_s = body.offline_enabled, body.full_enabled, body.offline_timeout_s
     M.audit(db, user, f"devices.rules:{device.id}")
     db.commit()
     return get_rules(device_id, user, db)
@@ -375,7 +375,7 @@ def alert_view(alert, info):
 
 def scoped_alerts(db, user, limit, active_only):
     query = select(M.Alert, AlertDetails).join(AlertDetails, AlertDetails.alert_id == M.Alert.id).where(
-        AlertDetails.kind == "parking_full")
+        AlertDetails.kind.in_(ALERT_KINDS))
     codes = visible_codes(db, user)
     if codes is not None:
         device_ids = select(M.Device.id).where(M.Device.code.in_(codes))
@@ -392,7 +392,7 @@ def acknowledge_alert(alert_id: int, user=Depends(M.current_user), db=Depends(M.
     if user.role not in {"admin", "operator"}:
         raise HTTPException(403, "Insufficient permissions")
     row = db.execute(select(M.Alert, AlertDetails).join(AlertDetails, AlertDetails.alert_id == M.Alert.id)
-                     .where(M.Alert.id == alert_id, AlertDetails.kind == "parking_full")).first()
+                     .where(M.Alert.id == alert_id, AlertDetails.kind.in_(ALERT_KINDS))).first()
     if not row:
         raise HTTPException(404, "Alert not found")
     alert, info = row
