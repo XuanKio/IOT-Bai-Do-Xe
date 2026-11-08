@@ -89,7 +89,12 @@ GET `/devices/{id}/configuration` cho biết chu kỳ đã ghi nhận và yêu c
 - GET/PUT `/devices/{id}/rules`: bật/tắt cảnh báo bãi đầy, ngưỡng dữ liệu 5–120 giây. `offline_enabled` luôn trả về false; không tạo cảnh báo mất kết nối hoặc lệnh timeout.
 - Ngưỡng thực tế lấy max(ngưỡng cấu hình, ba chu kỳ gửi) để tránh báo mất kết nối sai khi tăng chu kỳ.
 - Một cảnh báo đang diễn ra không bị tạo lại mỗi giây. Hết điều kiện thì ghi resolved_at.
-- Cảnh báo bãi đầy tự kết thúc khi điều kiện không còn, không cần người dùng xác nhận. Đã bỏ API xác nhận cảnh báo và các trường trạng thái xác nhận khỏi danh sách cảnh báo. Danh sách `/alerts` chỉ trả cảnh báo bãi đầy, kể cả lịch sử.
+- Cảnh báo bãi đầy tự kết thúc khi điều kiện không còn (`resolved_at`). Danh sách `/alerts` chỉ trả cảnh báo bãi đầy, kể cả lịch sử, kèm `acknowledged`, `acknowledged_by` (ID người dùng) và `acknowledged_at`.
+- POST `/alerts/{alert_id}/acknowledge`: ghi nhận người đã xem/xử lý cảnh báo. Xác nhận **không** kết thúc cảnh báo; `active` và `resolved_at` vẫn do cơ chế tự động quyết định.
+  - Admin xác nhận mọi cảnh báo; operator chỉ xác nhận cảnh báo của thiết bị được cấp quyền; viewer nhận 403; chưa đăng nhập bị từ chối.
+  - Cảnh báo không tồn tại hoặc ngoài phạm vi thiết bị đều trả 404 giống nhau.
+  - Idempotent: gọi lại trả 200 với người và thời điểm xác nhận đầu tiên, không ghi thêm audit log. Có thể xác nhận cảnh báo đã resolved; lịch sử không bị mất.
+  - Audit log: `alerts.acknowledge:<alert_id>:device:<device_id>` (chỉ ghi lần xác nhận đầu tiên).
 - `/parking/events` ghi initial/occupied/available/unknown/after_gap. Đây là thay đổi trạng thái ô,
   không phải nhận diện xe hoặc chứng minh chính xác lượt ra/vào qua cổng.
 - Khi mất kết nối hoặc dữ liệu quá cũ, `/parking/slots` và `/dashboard` dùng unknown, không tính là trống.
