@@ -494,6 +494,8 @@ def export_csv(device_id: str = "esp32_01", from_at: datetime | None = None,
         M.TelemetrySlot.telemetry_id == M.Telemetry.id).where(M.Telemetry.device_code == device_id)
     query = time_filter(query, M.Telemetry.received_at, from_at, to_at)
     rows = list(db.execute(query.order_by(M.Telemetry.id.desc(), M.TelemetrySlot.slot_name).limit(limit)))
+    M.audit(db, user, f"telemetry.export_csv:{device_id}")
+    db.commit()
     def generate():
         buffer = io.StringIO()
         writer = csv.writer(buffer)
