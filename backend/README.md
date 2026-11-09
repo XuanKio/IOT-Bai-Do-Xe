@@ -29,7 +29,7 @@ SQLite được dùng để chạy local không cần cài database. File `parki
 - Admin tạo tài khoản, phân vai trò admin/operator/viewer, khóa tài khoản. Không được tự khóa hoặc hạ quyền chính mình.
 - Đăng ký thiết bị, xem danh sách, cập nhật trạng thái theo vòng đời. Decommissioned là trạng thái kết thúc.
 - Hai chỗ đỗ mặc định có trạng thái unknown; dashboard không tính unknown là chỗ trống.
-- Chỉ cảnh báo bãi đầy, tự kết thúc khi hết điều kiện; admin/operator (trong phạm vi thiết bị) xác nhận qua `POST /alerts/{id}/acknowledge` mà không làm cảnh báo kết thúc; audit log dành cho admin.
+- Cảnh báo bãi đầy và mất kết nối thiết bị (`device_offline`, mặc định bật, cấu hình qua `PUT /devices/{id}/rules`), đều tự kết thúc khi hết điều kiện; admin/operator (trong phạm vi thiết bị) xác nhận qua `POST /alerts/{id}/acknowledge` mà không làm cảnh báo kết thúc; audit log dành cho admin.
 - Swagger/OpenAPI và health check.
 
 ## Quyền

@@ -165,13 +165,8 @@ def test_full_alerts_resolve_without_acknowledgement_and_stay_scoped(api):
         db.commit()
     runtime_tick(); runtime_tick()
     assert client.get("/dashboard", headers=headers["operator_v2"]).json()["unknown"] == 2
-    offline = [alert for alert in client.get("/alerts?active_only=true", headers=headers["operator_v2"]).json() if alert["kind"] == "device_offline"]
-    assert offline == []
-    with M.Sessions() as db:
-        assert not db.scalar(select(AlertDetails).where(AlertDetails.kind == "device_offline"))
     persist_reading(reading(1, 1), M.now())
     runtime_tick()
-    assert not [alert for alert in client.get("/alerts?active_only=true", headers=headers["operator_v2"]).json() if alert["kind"] == "device_offline"]
     assert client.get("/alerts", headers=headers["stranger_v2"]).json() == []
 
 
@@ -269,23 +264,23 @@ def test_operator_without_grant_cannot_acknowledge(api):
     assert client.post(f"/alerts/{aid}/acknowledge", headers=headers["operator_v2"]).status_code == 404
 
 
-def test_old_nonparking_alerts_are_retired_and_hidden(api):
+def test_unsupported_alert_kinds_are_retired_and_hidden(api):
     client, headers, did, _ = api
     with M.Sessions() as db:
-        for kind in ("device_offline", "command_timeout"):
-            alert = M.Alert(message="Old alert")
-            db.add(alert)
-            db.flush()
-            db.add(AlertDetails(alert_id=alert.id, device_id=did, kind=kind, active_key=f"{did}:{kind}"))
+        alert = M.Alert(message="Old alert")
+        db.add(alert)
+        db.flush()
+        db.add(AlertDetails(alert_id=alert.id, device_id=did, kind="command_timeout", active_key=f"{did}:command_timeout"))
         db.commit()
     runtime_tick()
     assert client.get("/alerts?limit=1", headers=headers["admin_v2"]).json() == []
     with M.Sessions() as db:
-        old = db.scalars(select(AlertDetails).where(AlertDetails.kind != "parking_full")).all()
-        assert len(old) == 2
+        old = db.scalars(select(AlertDetails).where(AlertDetails.kind == "command_timeout")).all()
+        assert len(old) == 1
         assert all(a.active_key is None and a.resolved_at for a in old)
+    assert client.get(f"/devices/{did}/rules", headers=headers["admin_v2"]).json()["offline_enabled"] is True
     result = client.put(f"/devices/{did}/rules", headers=headers["admin_v2"],
-        json={"offline_enabled": True, "full_enabled": True, "offline_timeout_s": 15})
+        json={"offline_enabled": False, "full_enabled": True, "offline_timeout_s": 15})
     assert result.status_code == 200
     assert result.json()["offline_enabled"] is False
     assert result.json()["offline_timeout_s"] == 15
