@@ -363,6 +363,16 @@ def get_command(command_id: str, user=Depends(M.current_user), db=Depends(M.sess
     return command_view(item)
 
 
+def alert_view(alert, info):
+    return {"id": alert.id, "message": alert.message,
+            "created_at": utc(alert.created_at).isoformat(), "device_id": info.device_id if info else None,
+            "kind": info.kind if info else "legacy", "active": bool(info and info.active_key),
+            "resolved_at": utc(info.resolved_at).isoformat() if info and info.resolved_at else None,
+            "acknowledged": bool(info and info.acknowledged_at),
+            "acknowledged_by": info.acknowledged_by if info else None,
+            "acknowledged_at": utc(info.acknowledged_at).isoformat() if info and info.acknowledged_at else None}
+
+
 def scoped_alerts(db, user, limit, active_only):
     query = select(M.Alert, AlertDetails).join(AlertDetails, AlertDetails.alert_id == M.Alert.id).where(
         AlertDetails.kind == "parking_full")
@@ -372,13 +382,32 @@ def scoped_alerts(db, user, limit, active_only):
         query = query.where(AlertDetails.device_id.in_(device_ids))
     if active_only:
         query = query.where(AlertDetails.active_key.is_not(None))
-    results = []
-    for alert, info in db.execute(query.order_by(M.Alert.id.desc()).limit(limit)):
-        results.append({"id": alert.id, "message": alert.message,
-            "created_at": utc(alert.created_at).isoformat(), "device_id": info.device_id if info else None,
-            "kind": info.kind if info else "legacy", "active": bool(info and info.active_key),
-            "resolved_at": utc(info.resolved_at).isoformat() if info and info.resolved_at else None})
-    return results
+    return [alert_view(alert, info) for alert, info in db.execute(query.order_by(M.Alert.id.desc()).limit(limit))]
+
+
+@router.post("/alerts/{alert_id}/acknowledge")
+@serialized
+def acknowledge_alert(alert_id: int, user=Depends(M.current_user), db=Depends(M.session)):
+    """Record who reviewed an alert. This never resolves it; resolution stays automatic."""
+    if user.role not in {"admin", "operator"}:
+        raise HTTPException(403, "Insufficient permissions")
+    row = db.execute(select(M.Alert, AlertDetails).join(AlertDetails, AlertDetails.alert_id == M.Alert.id)
+                     .where(M.Alert.id == alert_id, AlertDetails.kind == "parking_full")).first()
+    if not row:
+        raise HTTPException(404, "Alert not found")
+    alert, info = row
+    # Out-of-scope alerts look identical to missing ones.
+    try:
+        authorize(db, user, device_id=info.device_id)
+    except HTTPException as error:
+        if error.status_code == 404:
+            raise HTTPException(404, "Alert not found")
+        raise
+    if info.acknowledged_at is None:
+        info.acknowledged_by, info.acknowledged_at = user.id, M.now()
+        M.audit(db, user, f"alerts.acknowledge:{alert.id}:device:{info.device_id}")
+        db.commit()
+    return alert_view(alert, info)
 
 
 @router.get("/parking/events")

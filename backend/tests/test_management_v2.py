@@ -158,7 +158,8 @@ def test_full_alerts_resolve_without_acknowledgement_and_stay_scoped(api):
     persist_reading(reading(1, 0), M.now())
     runtime_tick()
     resolved = [alert for alert in client.get("/alerts", headers=headers["operator_v2"]).json() if alert["id"] == aid][0]
-    assert not resolved["active"] and resolved["resolved_at"] and "acknowledged" not in resolved and "acknowledged_by" not in resolved
+    assert not resolved["active"] and resolved["resolved_at"]
+    assert resolved["acknowledged"] is False and resolved["acknowledged_by"] is None and resolved["acknowledged_at"] is None
     with M.Sessions() as db:
         db.get(DeviceDetails, did).last_seen = M.now() - timedelta(seconds=20)
         db.commit()
@@ -172,6 +173,100 @@ def test_full_alerts_resolve_without_acknowledgement_and_stay_scoped(api):
     runtime_tick()
     assert not [alert for alert in client.get("/alerts?active_only=true", headers=headers["operator_v2"]).json() if alert["kind"] == "device_offline"]
     assert client.get("/alerts", headers=headers["stranger_v2"]).json() == []
+
+
+def make_full_alert(client, headers):
+    persist_reading(reading(0, 0), M.now())
+    runtime_tick(); runtime_tick()
+    return [a for a in client.get("/alerts?active_only=true", headers=headers["admin_v2"]).json()
+            if a["kind"] == "parking_full"][0]["id"]
+
+
+def user_id(name):
+    with M.Sessions() as db:
+        return db.scalar(select(M.User).where(M.User.username == name)).id
+
+
+def ack_logs(admin_client, headers):
+    return [row["action"] for row in admin_client.get("/audit-logs?limit=200", headers=headers["admin_v2"]).json()
+            if row["action"].startswith("alerts.acknowledge")]
+
+
+def test_acknowledge_records_actor_and_audit_without_resolving(api):
+    client, headers, did, _ = api
+    aid = make_full_alert(client, headers)
+    response = client.post(f"/alerts/{aid}/acknowledge", headers=headers["operator_v2"])
+    assert response.status_code == 200
+    body = response.json()
+    assert body["acknowledged"] is True and body["acknowledged_by"] == user_id("operator_v2")
+    assert body["acknowledged_at"] and body["active"] is True and body["resolved_at"] is None
+    listed = [a for a in client.get("/alerts?active_only=true", headers=headers["admin_v2"]).json() if a["id"] == aid][0]
+    assert listed["acknowledged_by"] == body["acknowledged_by"] and listed["active"] is True
+    assert ack_logs(client, headers) == [f"alerts.acknowledge:{aid}:device:{did}"]
+
+
+def test_acknowledge_denied_for_viewer_and_unauthenticated(api):
+    client, headers, _, _ = api
+    aid = make_full_alert(client, headers)
+    assert client.post(f"/alerts/{aid}/acknowledge", headers=headers["viewer_v2"]).status_code == 403
+    assert client.post(f"/alerts/{aid}/acknowledge").status_code in {401, 403}
+    assert client.get("/alerts", headers=headers["admin_v2"]).json()[0]["acknowledged"] is False
+    assert ack_logs(client, headers) == []
+
+
+def test_acknowledge_hides_alerts_outside_device_scope(api):
+    client, headers, _, _ = api
+    aid = make_full_alert(client, headers)
+    outside = client.post(f"/alerts/{aid}/acknowledge", headers=headers["stranger_v2"])
+    missing = client.post("/alerts/999999/acknowledge", headers=headers["stranger_v2"])
+    assert outside.status_code == missing.status_code == 404 and outside.json() == missing.json()
+    assert client.get("/alerts", headers=headers["admin_v2"]).json()[0]["acknowledged"] is False
+    assert ack_logs(client, headers) == []
+
+
+def test_repeated_acknowledge_is_idempotent_and_keeps_first_actor(api):
+    client, headers, _, _ = api
+    aid = make_full_alert(client, headers)
+    first = client.post(f"/alerts/{aid}/acknowledge", headers=headers["operator_v2"]).json()
+    again = client.post(f"/alerts/{aid}/acknowledge", headers=headers["admin_v2"])
+    assert again.status_code == 200 and again.json() == first
+    assert client.post(f"/alerts/{aid}/acknowledge", headers=headers["operator_v2"]).json() == first
+    assert len(ack_logs(client, headers)) == 1
+
+
+def test_acknowledge_resolved_alert_keeps_resolution_history(api):
+    client, headers, _, _ = api
+    aid = make_full_alert(client, headers)
+    persist_reading(reading(1, 0), M.now())
+    runtime_tick()
+    resolved = [a for a in client.get("/alerts", headers=headers["admin_v2"]).json() if a["id"] == aid][0]
+    assert resolved["active"] is False and resolved["resolved_at"]
+    body = client.post(f"/alerts/{aid}/acknowledge", headers=headers["admin_v2"]).json()
+    assert body["acknowledged"] is True and body["active"] is False and body["resolved_at"] == resolved["resolved_at"]
+
+
+def test_acknowledge_and_auto_resolve_are_independent(api):
+    client, headers, _, _ = api
+    aid = make_full_alert(client, headers)
+    client.post(f"/alerts/{aid}/acknowledge", headers=headers["operator_v2"])
+    runtime_tick(); runtime_tick()
+    assert [a for a in client.get("/alerts?active_only=true", headers=headers["admin_v2"]).json() if a["id"] == aid]
+    persist_reading(reading(1, 0), M.now())
+    runtime_tick()
+    final = [a for a in client.get("/alerts", headers=headers["admin_v2"]).json() if a["id"] == aid][0]
+    assert final["active"] is False and final["resolved_at"] and final["acknowledged"] is True
+    assert final["acknowledged_by"] == user_id("operator_v2")
+    with M.Sessions() as db:
+        assert db.scalar(select(func.count()).select_from(AlertDetails).where(AlertDetails.alert_id == aid)) == 1
+
+
+def test_operator_without_grant_cannot_acknowledge(api):
+    client, headers, did, _ = api
+    aid = make_full_alert(client, headers)
+    with M.Sessions() as db:
+        db.delete(db.get(DeviceGrant, (did, user_id("operator_v2"))))
+        db.commit()
+    assert client.post(f"/alerts/{aid}/acknowledge", headers=headers["operator_v2"]).status_code == 404
 
 
 def test_old_nonparking_alerts_are_retired_and_hidden(api):
