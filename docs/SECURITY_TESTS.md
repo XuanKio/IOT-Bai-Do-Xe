@@ -1,4 +1,4 @@
-# Báo Cáo Kiểm Thử Bảo Mật & Audit Log Backend (TV2)
+# Kiểm thử bảo mật và nhật ký backend
 
 Tài liệu này mô tả phạm vi kiểm thử bảo mật tự động và đối chiếu Audit Log cho phần Backend (`FastAPI` + `SQLite`) của hệ thống bãi đỗ xe thông minh **ParkFlow**.
 
@@ -67,7 +67,7 @@ Lệnh chạy kiểm thử:
 
 1. **Môi trường kiểm thử tự động (`FakeBroker` vs Phần cứng thực):**
    - Các bài kiểm thử trong `backend/tests/test_security_audit.py` chạy tự động trên cơ sở dữ liệu SQLite cô lập và `FakeBroker` (giả lập giao tiếp quản trị Dynamic Security của Mosquitto và MQTT Receiver).
-   - Việc kiểm chứng xác thực/ACL MQTT thực tế giữa mạch `ESP32` và tiến trình `Mosquitto` cũng như cấu hình TLS/HTTPS khi triển khai thực tế thuộc phạm vi kiểm thử tích hợp hệ thống / triển khai (TV1 & TV3).
+   - Việc kiểm chứng xác thực/ACL MQTT thực tế giữa mạch `ESP32` và tiến trình `Mosquitto` cũng như cấu hình TLS/HTTPS khi triển khai thực tế thuộc phạm vi kiểm thử tích hợp hệ thống / triển khai.
 2. **Ghi nhận đăng nhập thất bại với `username` không tồn tại (`POST /auth/login`):**
    - **Hiện trạng:** Khi `username` tồn tại trong bảng `users` nhưng sai mật khẩu hoặc tài khoản đang bị khóa (`active=false`), hệ thống ghi nhận `auth.login_failed` với `actor_id = user.id`. Khi `username` không tồn tại trong CSDL, hệ thống trả về cùng thông báo `401 "Invalid credentials"` (chống dò tìm tài khoản) nhưng **không** thể ghi vào bảng `audit_logs` vì cột `actor_id` có ràng buộc `INTEGER NOT NULL REFERENCES users(id)` (`PRAGMA foreign_keys=ON`). Hệ thống tuyệt đối không tạo bản ghi user giả để tránh làm bẩn bảng `users` và tránh rủi ro tấn công làm đầy CSDL (storage exhaustion DoS).
    - **Phương án đề xuất khi mở rộng:** (a) Ghi nhận sự kiện đăng nhập thất bại của username không tồn tại vào luồng nhật ký bảo mật ứng dụng / Reverse Proxy kèm địa chỉ IP nguồn và áp dụng rate-limiting theo IP; hoặc (b) Thực hiện migration schema trong phiên bản sau cho phép `actor_id` nhận `NULL` đối với sự kiện chưa định danh, bổ sung trường `ip_address` / `context` giới hạn độ dài kèm chính sách tự động dọn dẹp (`retention policy`).
@@ -75,3 +75,21 @@ Lệnh chạy kiểm thử:
    - **Hiện trạng:** Tại `backend/app/main.py`, `SECRET = os.getenv("JWT_SECRET") or secrets.token_urlsafe(48)` không dùng chuỗi mặc định tĩnh trong mã nguồn. Khi thiếu biến môi trường `JWT_SECRET`, mỗi tiến trình tự sinh một khóa ngẫu nhiên 48 byte (384 bit entropy) bằng CSPRNG — đảm bảo không thể giả mạo chữ ký offline khi chạy đơn tiến trình (dev/local), còn trong bộ công cụ chạy thật (`mqtt/configure.py`) khóa `jwt_secret` 48 byte (`secrets.token_hex(48)`) được sinh tự động vào `mqtt/runtime/backend.env`. Bộ kiểm thử (`backend/tests/conftest.py`) đặt khóa riêng cho môi trường pytest.
    - **Lưu ý triển khai Production:** Cần đặt cố định `JWT_SECRET` có độ dài tối thiểu 32 ký tự ngẫu nhiên (không dùng lại giá trị mẫu trong `.env.example` / `README.md`) để duy trì phiên qua các lần khởi động lại hoặc khi chạy nhiều worker.
 
+## Kiểm thử tích hợp cảnh báo và giao diện
+
+- `backend/tests/test_security_audit.py`: JWT sai/hết hạn, thu hồi phiên sau đăng xuất/đổi mật khẩu/khóa tài khoản, phân quyền admin/operator/viewer, phạm vi thiết bị, tính đầy đủ của audit, không ghi bí mật hoặc ghi trùng thao tác idempotent.
+- `backend/tests/test_offline_alerts.py`: thời gian chờ, cảnh báo không bị nhân bản, khôi phục kết nối, bảo trì/thu hồi, thiết bị chưa từng gửi dữ liệu, receiver khởi động lại, bật/tắt quy tắc và quyền xem/đánh dấu.
+- `backend/tests/test_management_v2.py`: cảnh báo bãi đầy tự kết thúc, người đã xem được giữ nguyên khi gọi lại, không lộ cảnh báo ngoài phạm vi.
+- `frontend/tests/core.test.js`: hiển thị hai loại cảnh báo, người đã xem độc lập với trạng thái sự cố, bộ lọc, khóa nút khi mất API và quy tắc mất kết nối mặc định tắt.
+
+```powershell
+.\backend\.venv\Scripts\python.exe -m pytest -q
+npm --prefix frontend run check
+npm --prefix frontend test
+```
+
+Kiểm thử backend dùng SQLite tạm và broker/receiver giả lập. Chúng không chứng minh kết nối phần cứng thật, TLS hoặc sức chịu tải. Đăng nhập với tên không tồn tại vẫn bị từ chối nhưng không ghi vào `audit_logs` vì `actor_id` phải tham chiếu tài khoản có thật. Chỉ admin được xem nhật ký.
+
+## Áp dụng trên hệ thống hiện tại
+
+Khởi động lại backend sau khi cập nhật mã nguồn, rồi tải lại dashboard. Không có dependency hoặc thay đổi cấu trúc bảng mới: các cột cảnh báo/người đã xem đã có trong schema hiện tại. Riêng thay đổi cảnh báo/audit không yêu cầu nạp ESP32; phiên bản firmware hiện tại và cách nạp nằm trong `firmware/README.md`. Muốn dùng cảnh báo mất kết nối, bật theo từng thiết bị trên trang **Lệnh & cấu hình**; dữ liệu và các thiết lập đang lưu được giữ nguyên.

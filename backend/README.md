@@ -29,7 +29,8 @@ SQLite được dùng để chạy local không cần cài database. File `parki
 - Admin tạo tài khoản, phân vai trò admin/operator/viewer, khóa tài khoản. Không được tự khóa hoặc hạ quyền chính mình.
 - Đăng ký thiết bị, xem danh sách, cập nhật trạng thái theo vòng đời. Decommissioned là trạng thái kết thúc.
 - Hai chỗ đỗ mặc định có trạng thái unknown; dashboard không tính unknown là chỗ trống.
-- Cảnh báo bãi đầy và mất kết nối thiết bị (`device_offline`, mặc định bật, cấu hình qua `PUT /devices/{id}/rules`), đều tự kết thúc khi hết điều kiện; admin/operator (trong phạm vi thiết bị) xác nhận qua `POST /alerts/{id}/acknowledge` mà không làm cảnh báo kết thúc; audit log dành cho admin.
+- Cảnh báo bãi đầy và mất kết nối (bật theo thiết bị, mặc định tắt); tự kết thúc, lưu người/thời điểm đã xem độc lập với trạng thái sự cố.
+- Audit đăng nhập, đổi mật khẩu, xuất CSV và thao tác quản trị; nhật ký chỉ dành cho admin.
 - Swagger/OpenAPI và health check.
 
 ## Quyền
@@ -38,15 +39,15 @@ SQLite được dùng để chạy local không cần cài database. File `parki
 |---|---|---|---|
 | Xem nhà xe tối giản `/parking/overview` | Có | Theo scope | Theo scope |
 | Dashboard kỹ thuật, thiết bị, telemetry/CSV, cảnh báo | Có | Theo scope | Không |
-| Lịch sử cảnh báo bãi đầy | Có | Theo scope | Không |
+| Lịch sử và đánh dấu cảnh báo đã xem | Có | Theo scope | Không |
 | Ping/cấu hình có ACK | Có | Theo quyền thiết bị | Không |
 | Quản lý tài khoản, thiết bị, audit log | Có | Không | Không |
 
 ## Tích hợp phần cứng và frontend
 
-Đã có MQTT nhận hai LM393 từ `esp32_01`: D27 là ô P1, D26 là ô P2. Broker Mosquitto portable có tài khoản/ACL riêng; backend lưu lịch sử từng ô và cập nhật `/parking/slots`, `/dashboard`. Mẫu quá ngưỡng offline (mặc định 10 giây, tối thiểu ba chu kỳ gửi) hoặc broker mất kết nối được coi là unknown. Xem `../mqtt/README.md` để chạy broker, backend, monitor và nạp firmware. Dữ liệu mô phỏng dùng thiết bị/topic riêng, không ghi đè trạng thái chỗ đỗ thật. Barie chưa được tích hợp.
+MQTT nhận bốn LM393 từ `esp32_01`: D27 là ô P1, D26 là ô P2, D32 là cảm biến cổng vào và D33 là cảm biến cổng ra. Servo cổng vào dùng D16, servo cổng ra dùng D19. Broker Mosquitto portable có tài khoản/ACL riêng; backend lưu lịch sử từng ô và cập nhật `/parking/slots`, `/dashboard`. Mẫu quá ngưỡng offline (mặc định 10 giây, tối thiểu ba chu kỳ gửi) hoặc broker mất kết nối được coi là unknown. Xem `../mqtt/README.md` để chạy broker, backend, monitor và nạp firmware. Dữ liệu mô phỏng dùng thiết bị/topic riêng, không ghi đè trạng thái chỗ đỗ thật.
 
-Backend v0.2 bổ sung cấp mật khẩu MQTT riêng qua onboarding, phân quyền theo từng thiết bị, thu hồi/decommission thực sự trên broker Dynamic Security, thông tin vị trí/hardware/firmware, cảnh báo bãi đầy tự kết thúc, lịch sử đổi trạng thái ô, bộ lọc thời gian, thống kê và CSV. Lệnh ping/cấu hình chu kỳ gửi có retry, timeout và ACK từ ESP32; HTTP 202 chưa có nghĩa lệnh đã thực hiện. Xem `../docs/BACKEND.md` để dùng API. Dashboard trong `../frontend/` hỗ trợ các chức năng này theo quyền tài khoản. Servo được tạm hoãn theo yêu cầu; chưa có nhận diện xe hoặc tính phí.
+Backend v0.2 bổ sung cấp mật khẩu MQTT riêng qua onboarding, phân quyền theo từng thiết bị, thu hồi/decommission thực sự trên broker Dynamic Security, thông tin vị trí/hardware/firmware, cảnh báo bãi đầy tự kết thúc, lịch sử đổi trạng thái ô, bộ lọc thời gian, thống kê và CSV. Lệnh ping/cấu hình chu kỳ gửi và điều khiển cổng có retry, timeout và ACK từ ESP32; HTTP 202 chưa có nghĩa lệnh đã thực hiện. Xem `../docs/BACKEND.md` để dùng API. Dashboard trong `../frontend/` hỗ trợ các chức năng này theo quyền tài khoản; chỉ admin được đổi chế độ và mở/đóng cổng. Chưa có nhận diện xe hoặc tính phí.
 
 Chưa có TLS deployment, rate limiting đăng nhập hoặc quy trình khôi phục mật khẩu. Chạy local trước;
 cần đo kiểm với phần cứng thật và hoàn thiện hồ sơ nộp theo [đối chiếu yêu cầu](../docs/REQUIREMENTS.md).
@@ -57,7 +58,7 @@ cần đo kiểm với phần cứng thật và hoàn thiện hồ sơ nộp the
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Kiểm thử dùng SQLite tạm riêng; bao gồm từ chối mật khẩu sai, phân quyền, thu hồi token, trùng mã thiết bị, chuyển trạng thái, dữ liệu chỗ đỗ chưa xác định, toàn vẹn audit log và kiểm thử bảo mật tự động (xem [báo cáo kiểm thử bảo mật](../docs/SECURITY_TESTS.md)).
+Kiểm thử dùng SQLite tạm riêng; bao gồm từ chối mật khẩu sai, phân quyền, thu hồi token, trùng mã thiết bị, chuyển trạng thái và dữ liệu chỗ đỗ chưa xác định.
 
 Xem [chính sách dữ liệu](../docs/STORAGE.md): SQLite giữ nguyên, dữ liệu hiện tại tách khỏi lịch sử,
 mẫu thay đổi/định kỳ giữ 3 ngày, sự kiện 90 ngày, tổng hợp thời gian 365 ngày.

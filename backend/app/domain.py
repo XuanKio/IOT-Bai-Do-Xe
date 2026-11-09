@@ -15,7 +15,7 @@ class DeviceDetails(Base):
     report_interval_ms: Mapped[int] = mapped_column(Integer, default=1000)
     offline_timeout_s: Mapped[int] = mapped_column(Integer, default=10)
     broker_provisioned: Mapped[bool] = mapped_column(Boolean, default=False)
-    offline_alert: Mapped[bool] = mapped_column(Boolean, default=True)
+    offline_alert: Mapped[bool] = mapped_column(Boolean, default=False)
     full_alert: Mapped[bool] = mapped_column(Boolean, default=True)
     connection_state: Mapped[str] = mapped_column(String(16), default="unknown")
     forced_offline: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -45,6 +45,9 @@ Trong luc firmware thu ket noi lai broker, dong Serial co the tre hon 1 giay do 
 - LOW (0V) = co vat can; HIGH (khoang 3.3V) = khong co vat can.
 - **Khong noi OUT 5V truc tiep vao D27.** Cap module 3V3 neu module ho tro, hoac dung bo chuyen muc.
 - D4 giu HIGH sau setup, la tin hieu dieu khien; khong dung lam nguon cap cho module.
+- Cam bien cong vao DO/OUT -> D32, cong ra -> D33. Servo cong vao tin hieu -> D16, cong ra -> D19; nguon servo 5V ngoai va chung GND voi ESP32.
+- Che do AUTO: D32 dieu khien D16, D33 dieu khien D19. Che do MANUAL bo qua cam bien va cho lenh tu web. Che do duoc luu NVS, khong bi xoa khi nap lai firmware.
+- Firmware 0.4.4 cho phep gui `a` va Enter qua Serial 115200 de luu cong vao sang AUTO; log hien che do, tan so va duty cua tung servo. Xem `../firmware/README.md`.
 
 ## Backend va thu du lieu
 
@@ -64,7 +67,7 @@ Swagger API van o `http://127.0.0.1:8000/docs`; goi `/auth/login`, dung access_t
   `/telemetry/latest` va lich su co them mang `slots`; mau cu van giu nguyen trong database.
   `/parking/slots` va `/dashboard` tu cap nhat tu du lieu thiet bi that; du lieu mo phong khong doi cho do.
   Mat ket noi hoac mau qua nguong offline thi cho do hien `unknown`, khong tinh thanh cho trong.
-  Lich su tung o luu them trong bang `sensor_slot_readings`. Chua dieu khien barie.
+  Lich su tung o luu them trong bang `sensor_slot_readings`. Dieu khien barie dung lenh `gate_mode`/`gate` danh cho admin, co ACK; firmware tu anh xa `entrance`/`exit` sang GPIO16/GPIO19.
 - Firmware publish QoS 0, khong retain: gui trang thai moi nhat moi giay, khong luu bu du lieu khi offline.
 
 Thu ma khong can ESP32:

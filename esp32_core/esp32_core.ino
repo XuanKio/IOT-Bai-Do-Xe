@@ -28,7 +28,7 @@ constexpr uint8_t SLOT1_PIN = 27;
 constexpr uint8_t SLOT2_PIN = 26;
 constexpr uint8_t ENTRANCE_SENSOR_PIN = 32;
 constexpr uint8_t EXIT_SENSOR_PIN = 33;
-constexpr uint8_t SERVO_PINS[2] = {18, 19};
+constexpr uint8_t SERVO_PINS[2] = {16, 19};
 // Calibrate these two positions for each arm before mounting the barrier.
 constexpr uint8_t SERVO_CLOSED_DEGREES[2] = {0, 0};
 constexpr uint8_t SERVO_OPEN_DEGREES[2] = {90, 90};
@@ -36,7 +36,7 @@ constexpr uint16_t SERVO_MIN_PULSE_US[2] = {500, 500};
 constexpr uint16_t SERVO_MAX_PULSE_US[2] = {2500, 2500};
 constexpr uint8_t ALWAYS_HIGH_PIN = 4;
 constexpr uint32_t RECONNECT_INTERVAL_MS = 5000;
-constexpr char FIRMWARE_VERSION[] = "esp32_core-0.4.3";
+constexpr char FIRMWARE_VERSION[] = "esp32_core-0.4.4";
 constexpr char BROKER_MDNS_HOST[] = "parkflow-iot";
 constexpr uint32_t BROKER_LOOKUP_TIMEOUT_MS = 800;
 char telemetryTopic[96], commandTopic[96], ackTopic[96], statusTopic[96];
@@ -338,11 +338,31 @@ void setup() {
     WiFi.begin();
   }
   Serial.println("Serial 115200. Go w va Enter de mo lai trang cau hinh Wi-Fi.");
+  Serial.println("Go a va Enter de chuyen cong vao sang AUTO khi kiem tra D32 -> D16.");
 }
 
 void loop() {
   wifiManager.process();
-  if (Serial.available() && Serial.read() == 'w') startWifiPortal();
+  if (Serial.available()) {
+    const char serialCommand = Serial.read();
+    if (serialCommand == 'w') startWifiPortal();
+    else if (serialCommand == 'a') {
+      bool success = false;
+      xSemaphoreTake(gateMutex, portMAX_DELAY);
+      if (entranceSensor.ready() && servoReady[0] &&
+          (gateControllers[0].automatic() || settings.putBool(MODE_KEYS[0], true) == 1)) {
+        success = gateControllers[0].setMode(true, gateControllers[0].revision() + 1,
+                                             entranceSensor.level() == LOW, millis());
+        if (success) {
+          servoReady[0] = writeServo(0);
+          success = servoReady[0];
+          gateReadingPending = true;
+        }
+      }
+      xSemaphoreGive(gateMutex);
+      Serial.println(success ? "Cong vao AUTO: D32 -> D16" : "Cong vao AUTO failed; check PWM and settings");
+    }
+  }
 
   uint32_t nowMs = millis();
   const bool wifiConnected = WiFi.status() == WL_CONNECTED;
@@ -484,6 +504,18 @@ void loop() {
       Serial.print(exitSensor.level());
       Serial.print(exitSensor.level() == LOW ? " CO XE" : " TRONG");
     } else Serial.print("DANG DOC");
+    for (uint8_t i = 0; i < 2; i++) {
+      Serial.print(i == 0 ? " | SERVO_VAO(D" : " | SERVO_RA(D");
+      Serial.print(SERVO_PINS[i]);
+      Serial.print(")=");
+      Serial.print(gateControllers[i].automatic() ? "AUTO," : "MANUAL,");
+      Serial.print(gateControllers[i].opened() ? "OPEN," : "CLOSED,");
+      Serial.print(servoReady[i] ? "PWM_OK" : "PWM_ERROR");
+      Serial.print(",HZ=");
+      Serial.print(servoReady[i] ? ledcReadFreq(SERVO_PINS[i]) : 0);
+      Serial.print(",DUTY=");
+      Serial.print(servoReady[i] ? ledcRead(SERVO_PINS[i]) : 0);
+    }
     xSemaphoreGive(gateMutex);
     Serial.print(wifiConnected ? " | Wi-Fi=OK" : " | Wi-Fi=CHO");
     Serial.print(" | RSSI=");

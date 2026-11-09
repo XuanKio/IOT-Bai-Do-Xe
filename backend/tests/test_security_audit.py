@@ -644,6 +644,9 @@ def test_s4_security_regression_e1_e2_alerts_and_device_lifecycle(sec_api, fake_
     client, headers, _, users, did, _ = sec_api
     admin_hdr = headers["sec_admin"]
     op_hdr = headers["sec_op_full"]
+    assert client.put(f"/devices/{did}/rules", headers=admin_hdr, json={
+        "offline_enabled": True, "full_enabled": True, "offline_timeout_s": 10,
+    }).status_code == 200
 
     # 1. Trigger parking_full and acknowledge (E1)
     t0 = M.now()

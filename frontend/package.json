@@ -1,0 +1,9 @@
+{
+  "name": "parkflow-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check assets/app.js && node --check assets/core.js && node --check assets/views.js && node --check assets/viewer.js",
+    "test": "node --test tests/core.test.js"
+  }
+}

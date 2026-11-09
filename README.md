@@ -46,7 +46,8 @@ Nhập Wi-Fi 2.4 GHz cùng mạng với máy tính. Mở `mqtt/Monitor.cmd` đ�
 - Onboarding với mật khẩu MQTT riêng; quản lý vị trí, firmware/hardware, bảo trì và vòng đời thiết bị.
 - Thu hồi/decommission được áp dụng lên broker bằng Mosquitto Dynamic Security.
 - Telemetry theo thời gian, phát hiện bản tin trùng bằng boot ID/sequence, lịch sử từng ô và sự kiện đổi trạng thái.
-- Theo dõi online/offline; chỉ cảnh báo bãi đầy, tự kết thúc và lưu lịch sử, không cần xác nhận.
+- Cảnh báo bãi đầy và mất kết nối (bật riêng theo thiết bị, mặc định tắt); tự kết thúc và giữ lịch sử. Có thể ghi nhận người đã xem cảnh báo.
+- Nhật ký đăng nhập thành công/thất bại, đổi mật khẩu và xuất CSV; chỉ admin xem nhật ký.
 - Lệnh `ping` và đổi chu kỳ gửi từ 500–10000 ms, có retry, timeout, idempotency key và ACK từ ESP32.
 - Lọc theo thời gian, tổng hợp thời gian có xe/trống/chưa xác định theo giờ và xuất CSV lịch sử.
 - Dữ liệu hiện tại cập nhật liên tục; lịch sử lưu khi đổi trạng thái hoặc mỗi 60 giây. Giữ mẫu 3 ngày, sự kiện 90 ngày, tổng hợp 365 ngày. Không suy diễn biển số, lượt xe hoặc phí gửi xe.
@@ -58,7 +59,7 @@ Nhập Wi-Fi 2.4 GHz cùng mạng với máy tính. Mở `mqtt/Monitor.cmd` đ�
 - Lịch sử cảm biến/sự kiện, bộ lọc UTC+7, biểu đồ thời gian có xe theo giờ và xuất CSV có kiểm tra quyền.
 - Đăng ký/cấp kết nối MQTT, thông tin thiết bị, vòng đời, gán ô và quyền theo từng người dùng.
 - Tổng quan tối giản: số chỗ trống, sơ đồ ô đỗ và cảnh báo khi bãi đầy; biểu đồ/lịch sử nằm ở trang riêng.
-- Ping, đổi chu kỳ gửi, theo dõi ACK/retry/timeout và cấu hình cảnh báo bãi đầy.
+- Ping, đổi chu kỳ gửi, theo dõi ACK/retry/timeout và cấu hình cảnh báo bãi đầy/mất kết nối.
 - Quản lý tài khoản và nhật ký dành cho admin; đổi mật khẩu cá nhân.
 
 Giao diện dùng API thật cùng origin, cập nhật mỗi 3 giây; không có số liệu mẫu trong bản chạy thật.

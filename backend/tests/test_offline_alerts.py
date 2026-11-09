@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from app import main as M
 from app.domain import AlertDetails, DeviceDetails, DeviceGrant
-from app.domain_service import persist_reading, runtime_tick
-from app.mqtt_receiver import TelemetryMessage
+from app.domain_service import persist_reading, receive_status, runtime_tick
+from app.mqtt_receiver import StatusMessage, TelemetryMessage
 
 
 def reading(level1=1, level2=1):
@@ -32,6 +32,7 @@ def env(fake_broker, monkeypatch):
         M.app.state.broker_admin = fake_broker
         with M.Sessions() as db:
             did = db.scalar(select(M.Device.id).where(M.Device.code == "esp32_01"))
+            db.get(DeviceDetails, did).offline_alert = True
             for name, role in (("admin_e2", "admin"), ("operator_e2", "operator"),
                                ("viewer_e2", "viewer"), ("stranger_e2", "operator")):
                 user = M.User(username=name, password_hash=M.hasher.hash("password-for-tests"), role=role)
@@ -264,3 +265,45 @@ def test_offline_and_parking_full_alerts_coexist(env):
     assert "parking_full" not in active
     with M.Sessions() as db:
         assert db.scalar(select(func.count()).select_from(AlertDetails).where(AlertDetails.kind == "parking_full")) == 1
+
+
+def test_effective_timeout_waits_for_three_report_intervals(env):
+    client, headers, did, clock = env
+    with M.Sessions() as db:
+        info = db.get(DeviceDetails, did)
+        info.offline_timeout_s, info.report_interval_ms = 5, 10000
+        db.commit()
+    start_online(clock)
+    go_silent(clock, 29)
+    assert rows() == 0
+    go_silent(clock, 1)
+    assert len(offline_alerts(client, headers, active_only=True)) == 1
+
+
+def test_lwt_offline_alerts_even_with_recent_telemetry_after_restart_grace(env):
+    client, headers, _, clock = env
+    start_online(clock)
+    clock.advance(11)
+    persist_reading(reading(), clock.now)
+    receive_status(StatusMessage(device_id="esp32_01", state="offline"), clock.now)
+    runtime_tick()
+    assert len(offline_alerts(client, headers, active_only=True)) == 1
+    clock.advance(1)
+    persist_reading(reading(), clock.now)
+    runtime_tick()
+    assert offline_alerts(client, headers, active_only=True) == []
+
+
+@pytest.mark.parametrize("ready_flag", ["connected", "subscribed"])
+def test_receiver_not_fully_ready_defers_alert_and_restarts_grace(env, ready_flag):
+    _, _, _, clock = env
+    start_online(clock)
+    setattr(M.app.state.mqtt_receiver, ready_flag, False)
+    go_silent(clock, 30)
+    assert rows() == 0
+    setattr(M.app.state.mqtt_receiver, ready_flag, True)
+    runtime_tick()
+    go_silent(clock, 9)
+    assert rows() == 0
+    go_silent(clock, 1)
+    assert rows() == 1

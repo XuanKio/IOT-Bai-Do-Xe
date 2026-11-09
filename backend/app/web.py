@@ -2,7 +2,7 @@
 import mimetypes
 from pathlib import Path
 
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
@@ -15,14 +15,11 @@ CSP = (
 
 def install_frontend(app):
     mimetypes.add_type("text/javascript", ".js")
-    if (FRONTEND / "assets").is_dir():
-        app.mount("/assets", StaticFiles(directory=FRONTEND / "assets"), name="frontend-assets")
+    app.mount("/assets", StaticFiles(directory=FRONTEND / "assets"), name="frontend-assets")
 
     @app.get("/", include_in_schema=False)
     def dashboard_page():
-        if (FRONTEND / "index.html").is_file():
-            return FileResponse(FRONTEND / "index.html", media_type="text/html")
-        return RedirectResponse("/docs")
+        return FileResponse(FRONTEND / "index.html", media_type="text/html")
 
     @app.middleware("http")
     async def frontend_headers(request, call_next):

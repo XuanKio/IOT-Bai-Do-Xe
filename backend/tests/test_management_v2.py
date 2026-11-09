@@ -278,11 +278,11 @@ def test_unsupported_alert_kinds_are_retired_and_hidden(api):
         old = db.scalars(select(AlertDetails).where(AlertDetails.kind == "command_timeout")).all()
         assert len(old) == 1
         assert all(a.active_key is None and a.resolved_at for a in old)
-    assert client.get(f"/devices/{did}/rules", headers=headers["admin_v2"]).json()["offline_enabled"] is True
+    assert client.get(f"/devices/{did}/rules", headers=headers["admin_v2"]).json()["offline_enabled"] is False
     result = client.put(f"/devices/{did}/rules", headers=headers["admin_v2"],
-        json={"offline_enabled": False, "full_enabled": True, "offline_timeout_s": 15})
+        json={"offline_enabled": True, "full_enabled": True, "offline_timeout_s": 15})
     assert result.status_code == 200
-    assert result.json()["offline_enabled"] is False
+    assert result.json()["offline_enabled"] is True
     assert result.json()["offline_timeout_s"] == 15
 
 
@@ -308,7 +308,7 @@ def servo_reading(mode="auto", revision=0, boot="11111111", seq=1):
     state = {"mode": mode, "target": "closed", "pwm_ready": True,
              "revision": revision, "close_remaining_ms": 0}
     return TelemetryMessage(**{**reading(boot_id=boot, seq=seq).model_dump(),
-        "gate_control": {"entrance": {**state, "servo_gpio": 18},
+        "gate_control": {"entrance": {**state, "servo_gpio": 16},
                          "exit": {**state, "servo_gpio": 19}}})
 
 

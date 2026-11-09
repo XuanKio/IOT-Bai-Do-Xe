@@ -86,18 +86,14 @@ GET `/devices/{id}/configuration` cho biết chu kỳ đã ghi nhận và yêu c
 
 ## Cảnh báo và lịch sử
 
-- GET/PUT `/devices/{id}/rules`: bật/tắt cảnh báo bãi đầy (`full_enabled`) và cảnh báo mất kết nối (`offline_enabled`), ngưỡng dữ liệu `offline_timeout_s` 5–120 giây. Admin hoặc operator có quyền cấu hình thiết bị được PUT; giá trị sai trả 422. Mặc định `offline_enabled=true`.
+- GET/PUT `/devices/{id}/rules`: bật/tắt cảnh báo bãi đầy (`full_enabled`) và mất kết nối (`offline_enabled`), ngưỡng dữ liệu 5–120 giây. Cảnh báo mất kết nối mặc định tắt, giữ cấu hình hiện có. Admin hoặc operator có `can_configure` được cập nhật.
 - Ngưỡng thực tế lấy max(ngưỡng cấu hình, ba chu kỳ gửi) để tránh báo mất kết nối sai khi tăng chu kỳ.
 - Một cảnh báo đang diễn ra không bị tạo lại mỗi giây. Hết điều kiện thì ghi resolved_at.
-- Cảnh báo `device_offline` được tạo khi thiết bị `active`, đã từng gửi dữ liệu (`last_seen`), bật `offline_enabled` và im lặng quá ngưỡng thực tế hoặc gửi trạng thái `offline` (LWT). Không tạo cảnh báo khi: thiết bị chưa từng gửi dữ liệu, trạng thái `registered/provisioned/maintenance/revoked/decommissioned`, MQTT receiver chưa sẵn sàng, hoặc chưa đủ một ngưỡng kể từ khi receiver sẵn sàng lại (tránh báo hàng loạt khi backend vừa khởi động). Trong các khoảng này cảnh báo đang mở được giữ nguyên (không resolve, không tạo trùng).
-- `device_offline` tự resolved (`resolved_at`) khi có dữ liệu hợp lệ trở lại, khi thiết bị chuyển khỏi `active`, hoặc khi tắt `offline_enabled`. Mỗi sự cố là một cảnh báo riêng; sự cố sau tạo bản ghi mới và giữ lịch sử cũ. Dữ liệu cũ: các thiết bị tạo trước phiên bản này có `device_details.offline_alert = 0`; bật bằng `PUT /devices/{id}/rules` hoặc `UPDATE device_details SET offline_alert = 1`.
-- Cảnh báo bãi đầy tự kết thúc khi điều kiện không còn (`resolved_at`). Danh sách `/alerts` trả cảnh báo `parking_full` và `device_offline`, kể cả lịch sử, kèm `kind`, `device_id`, `active`, `resolved_at`, `acknowledged`, `acknowledged_by` (ID người dùng) và `acknowledged_at`. Danh sách theo phạm vi thiết bị được cấp quyền.
-- Thử nghiệm: thiết bị thật — ngắt nguồn/Wi-Fi ESP32, sau tối thiểu ngưỡng (mặc định 10 giây, ít nhất 3 chu kỳ gửi) `/alerts` có `device_offline`; cắm lại thì cảnh báo resolved. Thiết bị `simulator` không sinh cảnh báo offline.
-- POST `/alerts/{alert_id}/acknowledge`: ghi nhận người đã xem/xử lý cảnh báo. Xác nhận **không** kết thúc cảnh báo; `active` và `resolved_at` vẫn do cơ chế tự động quyết định.
-  - Admin xác nhận mọi cảnh báo; operator chỉ xác nhận cảnh báo của thiết bị được cấp quyền; viewer nhận 403; chưa đăng nhập bị từ chối.
-  - Cảnh báo không tồn tại hoặc ngoài phạm vi thiết bị đều trả 404 giống nhau.
-  - Idempotent: gọi lại trả 200 với người và thời điểm xác nhận đầu tiên, không ghi thêm audit log. Có thể xác nhận cảnh báo đã resolved; lịch sử không bị mất.
-  - Audit log: `alerts.acknowledge:<alert_id>:device:<device_id>` (chỉ ghi lần xác nhận đầu tiên).
+- `device_offline` chỉ tạo cho thiết bị `active`, đã từng gửi dữ liệu, bật cảnh báo và quá hạn dữ liệu hoặc nhận LWT offline. Không tạo cho thiết bị chưa từng gửi dữ liệu, đang bảo trì/thu hồi, hoặc khi MQTT receiver chưa sẵn sàng. Khi receiver kết nối lại, chờ thêm một ngưỡng thực tế trước khi tạo cảnh báo để tránh báo nhầm hàng loạt. Cảnh báo đang mở được giữ trong thời gian receiver gián đoạn/chờ kết nối lại.
+- Mất kết nối tự kết thúc khi dữ liệu hợp lệ trở lại, thiết bị chuyển khỏi `active`, hoặc tắt quy tắc. Mỗi sự cố mới tạo một bản ghi mới, giữ lịch sử cũ. Không tạo cảnh báo timeout lệnh.
+- `/alerts` trả `parking_full` và `device_offline` theo quyền thiết bị, kèm `active`, `resolved_at`, `acknowledged`, `acknowledged_by`, `acknowledged_at`. Cảnh báo tự kết thúc khi điều kiện không còn.
+- POST `/alerts/{alert_id}/acknowledge`: admin hoặc operator trong phạm vi thiết bị ghi nhận đã xem cảnh báo. Thao tác này không kết thúc sự cố. Gọi lại giữ người/thời điểm đầu tiên và không nhân bản audit. Cảnh báo ngoài phạm vi hoặc không tồn tại đều trả 404; viewer bị từ chối. Có thể ghi nhận cả cảnh báo đã kết thúc.
+- Dashboard: vào **Lệnh & cấu hình → Giám sát bãi đỗ**, chọn thiết bị và bật **Cảnh báo thiết bị mất kết nối**, rồi lưu. Trang **Cảnh báo** hiển thị hai loại sự cố và nút **Đánh dấu đã xem**.
 - `/parking/events` ghi initial/occupied/available/unknown/after_gap. Đây là thay đổi trạng thái ô,
   không phải nhận diện xe hoặc chứng minh chính xác lượt ra/vào qua cổng.
 - Khi mất kết nối hoặc dữ liệu quá cũ, `/parking/slots` và `/dashboard` dùng unknown, không tính là trống.
@@ -108,8 +104,8 @@ GET `/devices/{id}/configuration` cho biết chu kỳ đã ghi nhận và yêu c
 - Snapshot mới nhất có `gate_sensors` (firmware 0.3.0+): `fresh`, `received_at`, `sensors.entrance` và `sensors.exit`. Mỗi cảm biến gồm `gpio`, `do`, `detected`; khi mất kết nối hoặc quá hạn, `do` và `detected` là null. Firmware cũ chưa gửi dữ liệu cổng trả `gate_sensors: null`. Dữ liệu mới nhất nằm trong bảng `live_gate_sensors`, tách khỏi chỗ đỗ và lịch sử P1/P2; không suy diễn lượt xe.
 - `/telemetry?device_id=esp32_01&limit=50&before_id=123&from_at=...&to_at=...`
 - `/telemetry/statistics`: đếm mẫu theo giờ UTC và ô; phần trăm là phần trăm **số mẫu**, không phải thời gian đỗ.
-- `/telemetry/export.csv`: tối đa 10000 dòng mỗi lần, thu hẹp khoảng thời gian để xuất tiếp; ghi audit log `telemetry.export_csv:<device_id>`.
-- `GET /audit-logs?limit=50`: chỉ dành cho `admin` (`limit` 1–200; `operator` và `viewer` nhận 403). Ghi nhận các thao tác xác thực và quản trị quan trọng (`auth.login`, `auth.login_failed`, `auth.logout`, `auth.password_changed`, `auth.password_change_failed`, `users.create:*`, `users.update:*`, `devices.create:*`, `devices.provision:*`, `devices.rotate_credentials:*`, `devices.status:*`, `devices.metadata:*`, `devices.grant:*`, `devices.ungrant:*`, `devices.assign_slot:*`, `devices.rules:*`, `commands.create:*`, `alerts.acknowledge:*`, `telemetry.export_csv:*`), không lưu mật khẩu, hash, JWT hay thông tin bí mật MQTT. Xem [SECURITY_TESTS.md](SECURITY_TESTS.md).
+- `/telemetry/export.csv`: tối đa 10000 dòng mỗi lần, thu hẹp khoảng thời gian để xuất tiếp; ghi audit `telemetry.export_csv:<device_id>` sau khi kiểm tra quyền và bộ lọc.
+- `/audit-logs?limit=50`: chỉ admin, giới hạn 1–200. Bổ sung `auth.login`, `auth.login_failed`, `auth.password_change_failed`, `alerts.acknowledge:<id>:device:<device_id>` và nhật ký xuất CSV. Đăng nhập sai tên không tồn tại không ghi vào bảng audit vì `actor_id` bắt buộc tham chiếu tài khoản; không lưu mật khẩu, hash, JWT hay khóa MQTT. Xem [kiểm thử bảo mật](SECURITY_TESTS.md).
 
 from_at/to_at dùng ISO 8601 kèm múi giờ, ví dụ `2026-10-24T08:00:00+07:00`; client phải URL-encode dấu +.
 Dữ liệu nhạy cảm: tên tài khoản, mật khẩu băm, quyền thiết bị. Không thu biển số/ảnh/vị trí GPS cá nhân.
@@ -144,7 +140,8 @@ POST `/devices/{id}/commands` chỉ dành cho admin với hai action mới:
 Gate là entrance/exit, mode là auto/manual, target là open/closed. Thao tác mở/đóng yêu cầu snapshot mới và
 mode manual. Mỗi cổng chỉ có một lệnh chờ; backend cấp revision tăng dần theo cổng, xác thực ACK theo
 boot ID, gate, revision và kết quả. Đổi boot/mất kết nối/thu hồi quyền admin sẽ hủy lệnh đang chờ.
-Tự động mở/đóng chạy tại ESP32; không tạo cảnh báo mới ngoài bãi đầy. Bảng mới `live_gate_control` và
+Firmware 0.4.4 hiện ánh xạ `entrance` sang servo GPIO16/D16 và cảm biến GPIO32/D32; `exit` sang servo GPIO19/D19 và cảm biến GPIO33/D33. Backend nhận chân thực tế từ `servo_gpio`, không cố định GPIO18. Đổi chân không đổi topic hoặc payload lệnh trên web. Chế độ được lưu trong NVS, nên nạp lại firmware không tự chuyển cổng đang manual sang auto.
+Tự động mở/đóng chạy tại ESP32; không tạo cảnh báo riêng cho chuyển động servo. Bảng mới `live_gate_control` và
 `gate_command_counters` được thêm khi backend khởi động, không đổi các bảng dữ liệu cũ.
 
 

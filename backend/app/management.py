@@ -62,7 +62,7 @@ class AssignSlotBody(StrictBody):
 
 
 class RuleBody(StrictBody):
-    offline_enabled: bool = True
+    offline_enabled: bool = False
     full_enabled: bool = True
     offline_timeout_s: int = Field(default=10, ge=5, le=120)
 

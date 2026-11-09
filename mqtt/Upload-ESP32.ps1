@@ -14,7 +14,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $taskRoot 'esp32_core\config.local.h
 if ($LASTEXITCODE -ne 0) { throw 'Arduino library installation failed.' }
 $taskSketch = Join-Path $taskRoot 'esp32_core'
 $taskBuild = Join-Path $taskSketch 'build'
-& $taskCli compile --fqbn $Fqbn --output-dir $taskBuild $taskSketch
+$taskCache = Join-Path $taskBuild 'cache'
+& $taskCli compile --fqbn $Fqbn --build-path $taskCache --output-dir $taskBuild $taskSketch
 if ($LASTEXITCODE -ne 0) { throw 'ESP32 compilation failed.' }
 if ($CompileOnly) { return }
 if (-not $Port) {
