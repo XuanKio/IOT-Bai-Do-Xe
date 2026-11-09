@@ -57,7 +57,7 @@ cần đo kiểm với phần cứng thật và hoàn thiện hồ sơ nộp the
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Kiểm thử dùng SQLite tạm riêng; bao gồm từ chối mật khẩu sai, phân quyền, thu hồi token, trùng mã thiết bị, chuyển trạng thái và dữ liệu chỗ đỗ chưa xác định.
+Kiểm thử dùng SQLite tạm riêng; bao gồm từ chối mật khẩu sai, phân quyền, thu hồi token, trùng mã thiết bị, chuyển trạng thái, dữ liệu chỗ đỗ chưa xác định, toàn vẹn audit log và kiểm thử bảo mật tự động (xem [báo cáo kiểm thử bảo mật](../docs/SECURITY_TESTS.md)).
 
 Xem [chính sách dữ liệu](../docs/STORAGE.md): SQLite giữ nguyên, dữ liệu hiện tại tách khỏi lịch sử,
 mẫu thay đổi/định kỳ giữ 3 ngày, sự kiện 90 ngày, tổng hợp thời gian 365 ngày.

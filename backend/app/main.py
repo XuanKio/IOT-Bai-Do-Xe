@@ -295,7 +295,12 @@ def telemetry_history(device_id: str = "esp32_01", limit: int = 50, before_id: i
 def login(body: Credentials, db: Session = Depends(session)):
     user = db.scalar(select(User).where(User.username == body.username))
     if not user or not user.active or not hasher.verify(body.password, user.password_hash):
+        if user:
+            audit(db, user, "auth.login_failed")
+            db.commit()
         raise HTTPException(401, "Invalid credentials")
+    audit(db, user, "auth.login")
+    db.commit()
     token = jwt.encode({"sub": str(user.id), "ver": user.token_version, "exp": now() + timedelta(minutes=int(os.getenv("TOKEN_MINUTES", "60")))}, SECRET, algorithm="HS256")
     return {"access_token": token, "token_type": "bearer"}
 
@@ -315,6 +320,8 @@ def logout(user: User = Depends(current_user), db: Session = Depends(session)):
 @app.post("/auth/password", status_code=204)
 def password(body: PasswordChange, user: User = Depends(current_user), db: Session = Depends(session)):
     if not hasher.verify(body.old_password, user.password_hash):
+        audit(db, user, "auth.password_change_failed")
+        db.commit()
         raise HTTPException(400, "Incorrect current password")
     user.password_hash = hasher.hash(body.new_password)
     user.token_version += 1
@@ -424,8 +431,9 @@ def update_device(device_id: int, body: DeviceUpdate, user: User = Depends(roles
     if body.status != item.status and body.status != "active":
         from app.storage import invalidate
         invalidate(db, item, now())
-    item.status = body.status
-    audit(db, user, f"devices.status:{device_id}:{body.status}")
+    if body.status != item.status:
+        item.status = body.status
+        audit(db, user, f"devices.status:{device_id}:{body.status}")
     db.commit()
     return device_view(item, db)
 

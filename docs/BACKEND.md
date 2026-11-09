@@ -108,7 +108,8 @@ GET `/devices/{id}/configuration` cho biết chu kỳ đã ghi nhận và yêu c
 - Snapshot mới nhất có `gate_sensors` (firmware 0.3.0+): `fresh`, `received_at`, `sensors.entrance` và `sensors.exit`. Mỗi cảm biến gồm `gpio`, `do`, `detected`; khi mất kết nối hoặc quá hạn, `do` và `detected` là null. Firmware cũ chưa gửi dữ liệu cổng trả `gate_sensors: null`. Dữ liệu mới nhất nằm trong bảng `live_gate_sensors`, tách khỏi chỗ đỗ và lịch sử P1/P2; không suy diễn lượt xe.
 - `/telemetry?device_id=esp32_01&limit=50&before_id=123&from_at=...&to_at=...`
 - `/telemetry/statistics`: đếm mẫu theo giờ UTC và ô; phần trăm là phần trăm **số mẫu**, không phải thời gian đỗ.
-- `/telemetry/export.csv`: tối đa 10000 dòng mỗi lần, thu hẹp khoảng thời gian để xuất tiếp.
+- `/telemetry/export.csv`: tối đa 10000 dòng mỗi lần, thu hẹp khoảng thời gian để xuất tiếp; ghi audit log `telemetry.export_csv:<device_id>`.
+- `GET /audit-logs?limit=50`: chỉ dành cho `admin` (`limit` 1–200; `operator` và `viewer` nhận 403). Ghi nhận các thao tác xác thực và quản trị quan trọng (`auth.login`, `auth.login_failed`, `auth.logout`, `auth.password_changed`, `auth.password_change_failed`, `users.create:*`, `users.update:*`, `devices.create:*`, `devices.provision:*`, `devices.rotate_credentials:*`, `devices.status:*`, `devices.metadata:*`, `devices.grant:*`, `devices.ungrant:*`, `devices.assign_slot:*`, `devices.rules:*`, `commands.create:*`, `alerts.acknowledge:*`, `telemetry.export_csv:*`), không lưu mật khẩu, hash, JWT hay thông tin bí mật MQTT. Xem [SECURITY_TESTS.md](SECURITY_TESTS.md).
 
 from_at/to_at dùng ISO 8601 kèm múi giờ, ví dụ `2026-10-24T08:00:00+07:00`; client phải URL-encode dấu +.
 Dữ liệu nhạy cảm: tên tài khoản, mật khẩu băm, quyền thiết bị. Không thu biển số/ảnh/vị trí GPS cá nhân.
